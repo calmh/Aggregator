@@ -1,5 +1,5 @@
-require 'rubygems'
 require 'mysql'
+require 'date'
 
 # Define some convenient shorthands for specifying times
 class Numeric
@@ -79,15 +79,18 @@ class Aggregator
 		@rules.sort! { |a, b| b[:age] <=> a[:age] }
 	end
 
+	# Create SQL commands for aggregating a table/id combination between the specified times to the specified interval.
+	# Results in an array of DELETE and INSERT commands.
 	def aggregate(table, id, start_time, end_time, interval)
-		queries = []
 		rows = rows(table, id, start_time, end_time)
+		return [] if rows.count < 2
+		queries = []
 		clusters = cluster_rows(rows, interval)
 		clusters.each do |cluster|
 			if cluster.length > 1
 				summary = summary_row(cluster)
 				insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
-				delete = "DELETE FROM #{table} WHERE id = #{id} AND UNIX_TIMESTAMP(dtime) IN (" + cluster.collect{ |c| c[0] }.join(", ") + ")"
+				delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |c| "FROM_UNIXTIME(#{c[0]})" }.join(", ") + ")"
 				queries << delete << insert
 			end
 		end
@@ -95,18 +98,21 @@ class Aggregator
 	end
 
 	def drop(table, end_time)
-		"DELETE FROM #{table} WHERE UNIX_TIMESTAMP(dtime) <= #{end_time}"
+		"DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
 	end
 
 	def run
 		to_process = tables
-		start_time = Time.new.to_i
-		while to_process.length > 0 && (runlimit.nil? || Time.new < start_time + runlimit)
+		processing_limit_time = Time.new + runlimit
+		while to_process.length > 0 && (runlimit.nil? || Time.new < processing_limit_time)
 			table = to_process.delete_at(rand(to_process.length))
-			puts "Looking at #{table}" if @verbose
 			last_pruned = get_pruned(table)
-			puts "  last_pruned=#{last_pruned}." if @verbose
-			next if !last_pruned.nil? && Time.new - last_pruned < reaggregate_interval
+			next if !last_pruned.nil? && DateTime.now < last_pruned + reaggregate_interval / 86400.0
+
+			table_rules = rules_for(table)
+			next if table_rules.length == 0
+
+			puts "Looking at #{table}" if @verbose
 
 			if @index
 				create_indexes(table)
@@ -114,7 +120,7 @@ class Aggregator
 
 			queries = []
 			prev_rule_end_time = nil
-			rules_for(table).each do |rule|
+			table_rules.each do |rule|
 				end_time = rule[:age].ago
 				if rule.key? :drop
 					queries << drop(table, end_time)
@@ -139,6 +145,7 @@ class Aggregator
 						inserts += connection.affected_rows
 					elsif q =~ /DELETE/
 						deletes += connection.affected_rows
+					end
 				end
 				connection.query("COMMIT")
 				connection.query("SET AUTOCOMMIT=1")
@@ -146,13 +153,16 @@ class Aggregator
 				queries.each { |q| puts q } if @verbose
 			end
 
-			puts "  Inserts: #{inserts}"
-			puts "  Deletes: #{deletes}"
+			puts "  Inserts: #{inserts}" if @verbose
+			puts "  Deletes: #{deletes}" if @verbose
 
 			if @optimize
 				optimize_table(table)
 			end
 
+			set_pruned(table)
+
+			puts "  #{to_process.length} tables left to handle." if @verbose
 		end
 	end
 
@@ -295,9 +305,7 @@ class Aggregator
 
 	# Return a list of all ids in a table.
 	def rows(table, id, start_time, end_time)
-		res = connection.query("SELECT UNIX_TIMESTAMP(dtime), counter, rate
-		FROM #{table}
-		WHERE id = #{id} AND dtime >= FROM_UNIXTIME(#{start_time}) AND dtime <= FROM_UNIXTIME(#{end_time})")
+		res = connection.query("SELECT UNIX_TIMESTAMP(dtime), counter, rate FROM #{table} WHERE id = #{id} AND dtime >= FROM_UNIXTIME(#{start_time}) AND dtime <= FROM_UNIXTIME(#{end_time})")
 		rows = []
 		res.each { |i| rows << [ i[0].to_i, i[1].to_i, i[2].to_i ] }
 		return rows
@@ -647,7 +655,7 @@ if __FILE__ == $PROGRAM_NAME
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 				queries = ag.aggregate('ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour)
 				assert(queries.length > 2)
-				assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND UNIX_TIMESTAMP\(dtime\) IN/)
+				assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
 				assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
 			end
 		end
@@ -661,6 +669,7 @@ if __FILE__ == $PROGRAM_NAME
 					ag.rules << { :table => :all, :age => 1.month, :reduce => 2.hour  }
 					ag.rules << { :table => :all, :age => 2.month, :drop => true }
 					ag.verbose = false
+					ag.runlimit = 50.minute
 					ag.run
 				end
 			end
