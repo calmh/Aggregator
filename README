@@ -13,6 +13,7 @@ the possibility of dropping data older than a certain threshold.
 Configuration is done flexibly in Ruby. An example aggregator script,
 complete and working, looks like this:
 
+ 0: require 'aggregator'
  1: a = Aggregator.new
  2: a.database = { :host => ..., :user => ..., :password => ..., :database => ... }
  3: a.rules << { :table => /^if/, :age => 1.month, :reduce => 15.minute }
@@ -26,6 +27,8 @@ complete and working, looks like this:
 11: a.run
 
 Going through this, line by line, we see:
+
+0: Load the aggregator library.
 
 1: Create an aggregator object.
 
