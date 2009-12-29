@@ -41,7 +41,7 @@ Going through this, line by line, we see:
      and years old should be reduced to hourly averages, and finally data
      between one and six months old should be kept in 15 minute averages.
 
-6-7: Create rulesq for tables matching ^adsl or ^dlink that reduces data
+6-7: Create rules for tables matching ^adsl or ^dlink that reduces data
      in the same fashion as above.
 
 8: Create a rule that matches all tabled and deletes data older than
