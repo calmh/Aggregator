@@ -137,8 +137,6 @@ class Aggregator
 			deletes = 0
 			inserts = 0
 			if !@dry_run
-				connection.query("SET AUTOCOMMIT=0")
-				connection.query("BEGIN")
 				queries.each do |q|
 					connection.query(q)
 					if q =~ /INSERT/
@@ -147,8 +145,6 @@ class Aggregator
 						deletes += connection.affected_rows
 					end
 				end
-				connection.query("COMMIT")
-				connection.query("SET AUTOCOMMIT=1")
 			else
 				queries.each { |q| puts q } if @verbose
 			end
