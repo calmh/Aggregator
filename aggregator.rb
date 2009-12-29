@@ -128,18 +128,26 @@ class Aggregator
 				prev_rule_end_time = end_time
 			end
 
+			deletes = 0
+			inserts = 0
 			if !@dry_run
 				connection.query("SET AUTOCOMMIT=0")
 				connection.query("BEGIN")
 				queries.each do |q|
-					puts q if @verbose
 					connection.query(q)
+					if q =~ /INSERT/
+						inserts += connection.affected_rows
+					elsif q =~ /DELETE/
+						deletes += connection.affected_rows
 				end
 				connection.query("COMMIT")
 				connection.query("SET AUTOCOMMIT=1")
 			else
 				queries.each { |q| puts q } if @verbose
 			end
+
+			puts "  Inserts: #{inserts}"
+			puts "  Deletes: #{deletes}"
 
 			if @optimize
 				optimize_table(table)
@@ -184,13 +192,18 @@ class Aggregator
 
 	# Return a list of rules that applies to the specified table.
 	def rules_for(table)
-		rules.select do |rule|
-			case (rule[:table])
-			when :all: true
-			when String: table == rule[:table]
-			when Regexp: table =~ rule[:table]
-			end
+		for_everyone = @rules.select { |rule| rule[:table] == :all }
+		for_me_regexp = @rules.select { |rule| rule[:table] != :all && rule[:table].kind_of?(Regexp) && table =~ rule[:table] }
+		for_me_string = @rules.select { |rule| rule[:table] != :all && rule[:table].kind_of?(String) && table == rule[:table] }
+		for_me_string.each do |r|
+			for_me_regexp = for_me_regexp.select { |nr| nr[:age] != r[:age] }
+			for_everyone = for_everyone.select { |nr| nr[:age] != r[:age] }
 		end
+		for_me_regexp.each do |r|
+			for_everyone = for_everyone.select { |nr| nr[:age] != r[:age] }
+		end
+		valid_rules = for_everyone + for_me_regexp + for_me_string
+		valid_rules.sort { |a, b| b[:age] <=> a[:age] }
 	end
 
 	def summary_row(rows)
@@ -461,6 +474,20 @@ if __FILE__ == $PROGRAM_NAME
 			assert_equal(3, list.length)
 			assert_equal(3.hour, list[0][:reduce])
 			assert_equal(2.hour, list[1][:reduce])
+			assert_equal(1.hour, list[2][:reduce])
+		end
+
+		def test_aggregator_more_specifics_should_decide
+			ag = Aggregator.new
+			ag.rules << { :table => :all, :age => 1.month, :reduce => 1.hour }
+			ag.rules << { :table => :all, :age => 2.month, :reduce => 2.hour }
+			ag.rules << { :table => /bar/, :age => 2.month, :reduce => 4.hour }
+			ag.rules << { :table => /bar/, :age => 4.month, :reduce => 8.hour }
+			ag.rules << { :table => "bar", :age => 4.month, :drop => true }
+			list = ag.send(:rules_for, "bar")
+			assert_equal(3, list.length)
+			assert_equal(true, list[0][:drop])
+			assert_equal(4.hour, list[1][:reduce])
 			assert_equal(1.hour, list[2][:reduce])
 		end
 
