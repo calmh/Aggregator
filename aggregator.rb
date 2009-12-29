@@ -59,6 +59,8 @@ class Aggregator
 	# pruned table doesn't exist.
 	#  dry_run = false
 	attr_accessor :dry_run
+	# Whether to print short informational messages to stdout during processing.
+	#  verbose = false
 	attr_accessor :verbose
 
 	def initialize
@@ -74,33 +76,12 @@ class Aggregator
 	end
 
 	# List of all currently active rules.
-	def rules
+	def rules # :nodoc:
 		# Rules should always be returned sorted with oldest first.
 		@rules.sort! { |a, b| b[:age] <=> a[:age] }
 	end
 
-	# Create SQL commands for aggregating a table/id combination between the specified times to the specified interval.
-	# Results in an array of DELETE and INSERT commands.
-	def aggregate(table, id, start_time, end_time, interval)
-		rows = rows(table, id, start_time, end_time)
-		return [] if rows.count < 2
-		queries = []
-		clusters = cluster_rows(rows, interval)
-		clusters.each do |cluster|
-			if cluster.length > 1
-				summary = summary_row(cluster)
-				insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
-				delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |c| "FROM_UNIXTIME(#{c[0]})" }.join(", ") + ")"
-				queries << delete << insert
-			end
-		end
-		return queries
-	end
-
-	def drop(table, end_time)
-		"DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
-	end
-
+	# Start the processing.
 	def run
 		to_process = tables
 		processing_limit_time = Time.new + runlimit
@@ -219,6 +200,7 @@ class Aggregator
 		valid_rules.sort { |a, b| b[:age] <=> a[:age] }
 	end
 
+	# Create a row that summarizes all those passed in.
 	def summary_row(rows)
 		return nil if rows.nil? || rows.length == 0
 		return rows[0] if rows.length == 1
@@ -233,6 +215,7 @@ class Aggregator
 		end
 	end
 
+	# Guess whether a certain dataset seems to be gauge data or not.
 	def gauge?(rows)
 		required_gauge_confidence = 2
 		probably_gauge = 0
@@ -282,6 +265,29 @@ class Aggregator
 	#
 	# Database stuff
 	#
+
+	# Create SQL commands for aggregating a table/id combination between the specified times to the specified interval.
+	# Results in an array of DELETE and INSERT commands.
+	def aggregate(table, id, start_time, end_time, interval)
+		rows = rows(table, id, start_time, end_time)
+		return [] if rows.count < 2
+		queries = []
+		clusters = cluster_rows(rows, interval)
+		clusters.each do |cluster|
+			if cluster.length > 1
+				summary = summary_row(cluster)
+				insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
+				delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |c| "FROM_UNIXTIME(#{c[0]})" }.join(", ") + ")"
+				queries << delete << insert
+			end
+		end
+		return queries
+	end
+
+	# Create SQL command to delete old data from a table.
+	def drop(table, end_time)
+		"DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
+	end
 
 	# Get a database connection or raise an error if we can't
 	def connection
