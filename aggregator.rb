@@ -119,8 +119,13 @@ class Aggregator
 			end
 
 			queries = []
+			deletes = 0
+			inserts = 0
+			delete_qs = 0
+			insert_qs = 0
 			prev_rule_end_time = nil
 			table_rules.each do |rule|
+				# Do drops and reduces, and collect SQL statements
 				end_time = rule[:age].ago
 				if rule.key? :drop
 					queries << drop(table, end_time)
@@ -132,25 +137,27 @@ class Aggregator
 					end
 				end
 				prev_rule_end_time = end_time
-			end
 
-			deletes = 0
-			inserts = 0
-			if !@dry_run
-				queries.each do |q|
-					connection.query(q)
-					if q =~ /INSERT/
-						inserts += connection.affected_rows
-					elsif q =~ /DELETE/
-						deletes += connection.affected_rows
+				# Execute the collected statements
+				if !@dry_run
+					queries.each do |q|
+						connection.query(q)
+						if q =~ /INSERT/
+							inserts += connection.affected_rows
+							insert_qs += 1
+						elsif q =~ /DELETE/
+							deletes += connection.affected_rows
+							delete_qs += 1
+						end
 					end
+				else
+					queries.each { |q| puts q } if @verbose
 				end
-			else
-				queries.each { |q| puts q } if @verbose
+				queries = []
 			end
 
-			puts "  Inserts: #{inserts}" if @verbose
-			puts "  Deletes: #{deletes}" if @verbose
+			puts "  Inserted #{inserts} rows (individually)." if @verbose
+			puts "  Deleted #{deletes} rows in #{delete_qs} queries (about #{(deletes / delete_qs).to_i} rows/q)" if @verbose
 
 			if @optimize
 				optimize_table(table)
@@ -158,7 +165,7 @@ class Aggregator
 
 			set_pruned(table)
 
-			puts "  #{to_process.length} tables left to handle." if @verbose
+			puts "  #{to_process.length} tables left to check." if @verbose
 		end
 	end
 
