@@ -346,6 +346,21 @@ end
 
 if __FILE__ == $PROGRAM_NAME
 	require 'test/unit'
+
+	class Class
+		# Make all private methods public and return a list of them
+		def publicize_methods
+			saved_private_instance_methods = self.private_instance_methods
+			self.class_eval { public *saved_private_instance_methods }
+			return saved_private_instance_methods
+		end
+
+		# Make the specified methods private
+		def privatize_methods(methods)
+			self.class_eval { private *methods }
+		end
+	end
+
 	class TestAggregator < Test::Unit::TestCase
 		HAVE_LOCAL_DB = true
 		TESTDBHOST = 'localhost'
@@ -357,6 +372,7 @@ if __FILE__ == $PROGRAM_NAME
 			@conn ||= Mysql::new(TESTDBHOST, TESTDBUSER, TESTDBPASS, nil)
 		end
 
+		# Generate a few counter rows
 		def counter_rows(num, base, rate, interval)
 			rows = []
 			counter_sum = 0
@@ -372,6 +388,7 @@ if __FILE__ == $PROGRAM_NAME
 			return [rows, counter_sum, rate_avg]
 		end
 
+		# Generate a few gauge rows
 		def gauge_rows(num, base, rate, interval)
 			rows = []
 			rate_sum = 0
@@ -386,6 +403,9 @@ if __FILE__ == $PROGRAM_NAME
 		end
 
 		def setup
+			# The class under inspection shall have no secrets
+			@privates = Aggregator.publicize_methods
+
 			if HAVE_LOCAL_DB
 				conn.query("CREATE DATABASE #{TESTDBDATABASE}")
 				conn.query("USE #{TESTDBDATABASE}")
@@ -410,6 +430,8 @@ if __FILE__ == $PROGRAM_NAME
 			if HAVE_LOCAL_DB
 				conn.query("DROP DATABASE #{TESTDBDATABASE}")
 			end
+
+			Aggregator.privatize_methods @privates
 		end
 
 		def test_numeric_must_respond_to_minute
@@ -487,7 +509,7 @@ if __FILE__ == $PROGRAM_NAME
 			ag.rules << { :table => "bar", :age => 2.month, :reduce => 6.hour }
 			ag.rules << { :table => /foo/, :age => 3.month, :reduce => 3.hour }
 			ag.rules << { :table => /bar/, :age => 3.month, :reduce => 12.hour }
-			list = ag.send(:rules_for, "foo")
+			list = ag.rules_for "foo"
 			assert_equal(3, list.length)
 			assert_equal(3.hour, list[0][:reduce])
 			assert_equal(2.hour, list[1][:reduce])
@@ -501,7 +523,7 @@ if __FILE__ == $PROGRAM_NAME
 			ag.rules << { :table => /bar/, :age => 2.month, :reduce => 4.hour }
 			ag.rules << { :table => /bar/, :age => 4.month, :reduce => 8.hour }
 			ag.rules << { :table => "bar", :age => 4.month, :drop => true }
-			list = ag.send(:rules_for, "bar")
+			list = ag.rules_for "bar"
 			assert_equal(3, list.length)
 			assert_equal(true, list[0][:drop])
 			assert_equal(4.hour, list[1][:reduce])
@@ -516,26 +538,26 @@ if __FILE__ == $PROGRAM_NAME
 
 		def test_aggregator_must_exclude_standard_tables
 			ag = Aggregator.new
-			assert(ag.send(:exclude?, "pruned"))
-			assert(ag.send(:exclude?, "routers"))
-			assert(ag.send(:exclude?, "interfaces"))
+			assert(ag.exclude? "pruned")
+			assert(ag.exclude? "routers")
+			assert(ag.exclude? "interfaces")
 		end
 
 		def test_aggregator_must_exclude_custom_tables
 			ag = Aggregator.new
 			ag.excludes << /^dlink/
-			assert(ag.send(:exclude?, "dlinkCpuPercent_1234"))
+			assert(ag.exclude?("dlinkCpuPercent_1234"))
 		end
 
 		def test_aggregator_must_not_exclude_random_tables
 			ag = Aggregator.new
-			assert(!ag.send(:exclude?, "dlinkCpuPercent_1234"))
+			assert(!ag.exclude?("dlinkCpuPercent_1234"))
 		end
 
 		def test_aggregator_must_not_connect_without_database
 			ag = Aggregator.new
 			assert_raises Mysql::Error do
-				ag.send(:connection)
+				ag.connection
 			end
 		end
 
@@ -543,7 +565,7 @@ if __FILE__ == $PROGRAM_NAME
 			ag = Aggregator.new
 			ag.database = { :host => "db.example.com", :user => "aggregator", :password => "abc123", :database => "rtg" }
 			assert_raises Mysql::Error do
-				ag.send(:connection)
+				ag.connection
 			end
 		end
 
@@ -551,7 +573,7 @@ if __FILE__ == $PROGRAM_NAME
 			if HAVE_LOCAL_DB
 				ag = Aggregator.new
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-				assert_not_equal(nil, ag.send(:connection))
+				assert_not_equal(nil, ag.connection)
 			end
 		end
 
@@ -559,7 +581,7 @@ if __FILE__ == $PROGRAM_NAME
 			if HAVE_LOCAL_DB
 				ag = Aggregator.new
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-				tables = ag.send(:tables)
+				tables = ag.tables
 				assert_equal(1, tables.length)
 				assert_equal("ifInOctets_252", tables[0])
 			end
@@ -569,8 +591,8 @@ if __FILE__ == $PROGRAM_NAME
 			if HAVE_LOCAL_DB
 				ag = Aggregator.new
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-				ag.send(:set_pruned, 'foo')
-				assert_kind_of(DateTime, ag.send(:get_pruned, 'foo'))
+				ag.set_pruned 'foo'
+				assert_kind_of(DateTime, ag.get_pruned('foo'))
 			end
 		end
 
@@ -578,7 +600,7 @@ if __FILE__ == $PROGRAM_NAME
 			if HAVE_LOCAL_DB
 				ag = Aggregator.new
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-				ids = ag.send(:ids, 'ifInOctets_252')
+				ids = ag.ids 'ifInOctets_252'
 				assert_equal(1, ids.length)
 				assert_equal(42, ids[0])
 			end
@@ -588,7 +610,7 @@ if __FILE__ == $PROGRAM_NAME
 			if HAVE_LOCAL_DB
 				ag = Aggregator.new
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-				rows = ag.send(:rows, 'ifInOctets_252', 42, 2.month.ago, 1.month.ago)
+				rows = ag.rows 'ifInOctets_252', 42, 2.month.ago, 1.month.ago
 				assert_in_delta(50, rows.length, 5)
 			end
 		end
@@ -600,7 +622,7 @@ if __FILE__ == $PROGRAM_NAME
 			rows << [ 600, 300*1e6, 1e6 ]
 
 			ag = Aggregator.new
-			assert(!ag.send(:gauge?, rows))
+			assert(!ag.gauge?(rows))
 		end
 
 		def test_aggregator_must_recognize_counters_example_two
@@ -610,7 +632,7 @@ if __FILE__ == $PROGRAM_NAME
 			rows << [ 600, 300*1.5e6, 1.5e6 ]
 
 			ag = Aggregator.new
-			assert(!ag.send(:gauge?, rows))
+			assert(!ag.gauge?(rows))
 		end
 
 		def test_aggregator_must_recognize_gauge
@@ -620,7 +642,7 @@ if __FILE__ == $PROGRAM_NAME
 			rows << [ 600, 100, 100 ]
 
 			ag = Aggregator.new
-			assert(ag.send(:gauge?, rows))
+			assert(ag.gauge?(rows))
 		end
 
 		def test_aggregator_should_aggregate_counter_rows
@@ -628,7 +650,7 @@ if __FILE__ == $PROGRAM_NAME
 			rows, counter_sum, rate_avg = counter_rows(100, base, 1e6, 300)
 			base += 99*300;
 			ag = Aggregator.new
-			rows = ag.send(:summary_row, rows)
+			rows = ag.summary_row rows
 			assert_equal(3, rows.length) # One array with three values
 			assert_equal(base, rows[0]) # Last time represents all rows
 			assert_equal(counter_sum, rows[1]) # New counter_diff is sum of all counter_diffs
@@ -641,7 +663,7 @@ if __FILE__ == $PROGRAM_NAME
 			base += 99*300;
 
 			ag = Aggregator.new
-			rows = ag.send(:summary_row, rows)
+			rows = ag.summary_row rows
 			assert_equal(3, rows.length) # One array with three values
 			assert_equal(base, rows[0]) # Last time represents all rows
 			assert_equal(rate_avg, rows[1]) # New counter_diff is average of all counter_diffs
@@ -651,7 +673,7 @@ if __FILE__ == $PROGRAM_NAME
 		def test_aggregator_should_cluster_rows
 			ag = Aggregator.new
 			rows, counter_sum, rate_avg = counter_rows(100, 10, 1e6, 300)
-			clustered = ag.send(:cluster_rows, rows, 3600)
+			clustered = ag.cluster_rows rows, 3600
 			assert_equal(9, clustered.length)
 			assert_equal(12, clustered[0].length)
 			assert_equal(12, clustered[7].length)
@@ -662,7 +684,7 @@ if __FILE__ == $PROGRAM_NAME
 			if HAVE_LOCAL_DB
 				ag = Aggregator.new
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-				queries = ag.aggregate('ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour)
+				queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
 				assert(queries.length > 2)
 				assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
 				assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
