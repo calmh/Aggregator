@@ -99,7 +99,6 @@ class Aggregator
 				create_indexes(table)
 			end
 
-			queries = []
 			deletes = 0
 			inserts = 0
 			delete_qs = 0
@@ -109,32 +108,41 @@ class Aggregator
 				# Do drops and reduces, and collect SQL statements
 				end_time = rule[:age].ago
 				if rule.key? :drop
-					queries << drop(table, end_time)
-				elsif rule.key? :reduce
-					interval = rule[:reduce]
-					start_time = prev_rule_end_time || 0
-					ids(table).each do |id|
-						queries += aggregate(table, id, start_time, end_time, interval)
-					end
-				end
-				prev_rule_end_time = end_time
-
-				# Execute the collected statements
-				if !@dry_run
-					queries.each do |q|
-						connection.query(q)
-						if q =~ /INSERT/
-							inserts += connection.affected_rows
-							insert_qs += 1
-						elsif q =~ /DELETE/
+					if @dry_run
+						query = drop(table, end_time)
+						puts query if @verbose
+					else
+						drop(table, end_time) do |q|
+							connection.query(q)
 							deletes += connection.affected_rows
 							delete_qs += 1
 						end
 					end
-				else
-					queries.each { |q| puts q } if @verbose
+				elsif rule.key? :reduce
+					interval = rule[:reduce]
+					start_time = prev_rule_end_time || 0
+					ids(table).each do |id|
+						if @dry_run
+							# Aggregate and get queries for printing
+							queries = aggregate(table, id, start_time, end_time, interval)
+							queries.each { |q| puts q } if @verbose
+						else
+							# Aggregate with immediate execution
+							aggregate(table, id, start_time, end_time, interval) do |q|
+								connection.query(q)
+								if q =~ /INSERT/
+									inserts += connection.affected_rows
+									insert_qs += 1
+								elsif q =~ /DELETE/
+									deletes += connection.affected_rows
+									delete_qs += 1
+								end
+							end
+						end
+					end
 				end
-				queries = []
+				prev_rule_end_time = end_time
+
 			end
 
 			puts "  Inserted #{inserts} rows (individually)." if @verbose
@@ -278,7 +286,12 @@ class Aggregator
 				summary = summary_row(cluster)
 				insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
 				delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |c| "FROM_UNIXTIME(#{c[0]})" }.join(", ") + ")"
-				queries << delete << insert
+				if defined? yield
+					yield delete
+					yield insert
+				else
+					queries << delete << insert
+				end
 			end
 		end
 		return queries
@@ -286,7 +299,12 @@ class Aggregator
 
 	# Create SQL command to delete old data from a table.
 	def drop(table, end_time)
-		"DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
+		q = "DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
+		if defined? yield
+			yield(q)
+		else
+			return q
+		end
 	end
 
 	# Get a database connection or raise an error if we can't
@@ -688,6 +706,35 @@ if __FILE__ == $PROGRAM_NAME
 				assert(queries.length > 2)
 				assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
 				assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
+			end
+		end
+
+		def test_aggregator_should_aggregate_table_by_hour_and_not_repeat_itself
+			if HAVE_LOCAL_DB
+				ag = Aggregator.new
+				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+				queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
+				assert(queries.length > 2)
+				assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
+				assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
+				# Execute the suggested queries
+				queries.each { |q| conn.query(q) }
+				# Verify that a new aggregations finds nothing to do.
+				queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
+				assert_equal(0, queries.length)
+			end
+		end
+
+		def test_aggregator_should_aggregate_table_by_hour_and_execute_block
+			if HAVE_LOCAL_DB
+				ag = Aggregator.new
+				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+				blockqueries = []
+				queries = ag.aggregate('ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour) { |q| blockqueries << q }
+				assert_equal(0, queries.length)
+				assert(blockqueries.length > 2)
+				assert(blockqueries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
+				assert(blockqueries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
 			end
 		end
 
