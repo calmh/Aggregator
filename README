@@ -1,17 +1,15 @@
 RTG Aggregator
 ==============
 
-One of the prominent features of RTG is that there is no averaging
-involved after the actual poll. This can be advantageous, but if you poll
-data with for many devices at a short interval, say one minute, you soon
-end up with hunreds of gigabytes of data. RTG Aggregator (hereafter
-"aggregator") is a solution to that problem.
+One of the prominent features of RTG is that there is no averaging involved
+after the actual poll. This can be advantageous, but if you poll data for many
+devices at a short interval you soon end up with hundreds of gigabytes of data.
+RTG Aggregator (hereafter "aggregator") is a solution to that problem.
 
-With aggregator you specify a rule set for how you want old data to be
-managed. This can be a stepwise degradation of precision over time, with
-the possibility of dropping data older than a certain threshold.
-Configuration is done flexibly in Ruby. An example aggregator script,
-complete and working, looks like this:
+With aggregator you specify a rule set for how you want old data to be managed.
+This can be a stepwise degradation of precision over time, with the possibility
+of dropping data older than a certain threshold. Configuration is done flexibly
+in Ruby. An example aggregator script, complete and working, looks like this:
 
  0: require 'aggregator'
  1: a = Aggregator.new
