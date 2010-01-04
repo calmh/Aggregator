@@ -10,6 +10,12 @@ class Numeric
 	def month ; 30 * day ; end
 	def year ; 365 * day ; end
 	def ago ; (Time.new.to_f - self).to_i ; end
+	def minutes ; minute ; end
+	def hours ; hour ; end
+	def days ; day ; end
+	def weeks ; week ; end
+	def months ; month ; end
+	def years ; year ; end
 end
 
 class Aggregator
@@ -460,26 +466,32 @@ if __FILE__ == $PROGRAM_NAME
 
 		def test_numeric_must_respond_to_minute
 			assert_equal(60, 1.minute)
+			assert_equal(60, 1.minutes)
 		end
 
 		def test_numeric_must_respond_to_hour
 			assert_equal(3600, 1.hour)
+			assert_equal(3600, 1.hours)
 		end
 
 		def test_numeric_must_respond_to_day
 			assert_equal(86400, 1.day)
+			assert_equal(86400, 1.days)
 		end
 
 		def test_numeric_must_respond_to_week
 			assert_equal(7*86400, 1.week)
+			assert_equal(7*86400, 1.weeks)
 		end
 
 		def test_numeric_must_respond_to_month
 			assert_equal(30*86400, 1.month)
+			assert_equal(30*86400, 1.months)
 		end
 
 		def test_numeric_must_respond_to_year
 			assert_equal(365*86400, 1.year)
+			assert_equal(365*86400, 1.years)
 		end
 
 		def test_numeric_must_respond_to_ago
