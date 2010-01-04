@@ -63,6 +63,12 @@ class Aggregator
 	#  verbose = false
 	attr_accessor :verbose
 
+	def self.aggregate
+		a = Aggregator.new
+		yield(a)
+		a.run
+	end
+
 	def initialize
 		@rules = []
 		@index = true
@@ -749,6 +755,21 @@ if __FILE__ == $PROGRAM_NAME
 					ag.verbose = false
 					ag.runlimit = 50.minute
 					ag.run
+				end
+			end
+		end
+
+		def test_aggregator_should_run_new_syntax
+			if HAVE_LOCAL_DB
+				assert_nothing_raised do
+					Aggregator.aggregate do |ag|
+					ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+					ag.rules << { :table => :all, :age => 14.day, :reduce => 1.hour }
+					ag.rules << { :table => :all, :age => 1.month, :reduce => 2.hour  }
+					ag.rules << { :table => :all, :age => 2.month, :drop => true }
+					ag.verbose = false
+					ag.runlimit = 50.minute
+					end
 				end
 			end
 		end
