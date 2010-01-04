@@ -30,7 +30,7 @@ Going through this, line by line, we see:
 
 Load the aggregator library.
 
-    Aggregator.do |a|
+    Aggregator.aggregator do |a|
 
 Start aggregation with "a" as the object holding the configuration.
 
