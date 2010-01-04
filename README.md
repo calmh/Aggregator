@@ -12,17 +12,17 @@ of dropping data older than a certain threshold. Configuration is done flexibly
 in Ruby. An example aggregator script, complete and working, looks like this:
 
     require 'aggregator'
-    a = Aggregator.new
-    a.database = { :host => ..., :user => ..., :password => ..., :database => ... }
-    a.rules << { :table => /^if/, :age => 1.month, :reduce => 15.minute }
-    a.rules << { :table => /^if/, :age => 6.month, :reduce => 1.hour }
-    a.rules << { :table => /^if/, :age => 2.year,  :reduce => 8.hour }
-    a.rules << { :table => /^adsl|^dlink/, :age => 1.month, :reduce => 1.hour }
-    a.rules << { :table => /^adsl|^dlink/, :age => 1.year,  :reduce => 1.day }
-    a.rules << { :table => :all, :age => 3.year,  :drop => true }
-    a.runlimit = 50.minute
-    a.verbose = true
-    a.run
+    Aggregator.aggregate do |a|
+    	a.database = { :host => ..., :user => ..., :password => ..., :database => ... }
+    	a.rules << { :table => /^if/, :age => 1.month, :reduce => 15.minute }
+    	a.rules << { :table => /^if/, :age => 6.month, :reduce => 1.hour }
+    	a.rules << { :table => /^if/, :age => 2.year,  :reduce => 8.hour }
+    	a.rules << { :table => /^adsl|^dlink/, :age => 1.month, :reduce => 1.hour }
+    	a.rules << { :table => /^adsl|^dlink/, :age => 1.year,  :reduce => 1.day }
+    	a.rules << { :table => :all, :age => 3.year,  :drop => true }
+    	a.runlimit = 50.minute
+    	a.verbose = true
+    end
 
 Going through this, line by line, we see:
 
@@ -30,9 +30,9 @@ Going through this, line by line, we see:
 
 Load the aggregator library.
 
-    a = Aggregator.new
+    Aggregator.do |a|
 
-Create an aggregator object.
+Start aggregation with "a" as the object holding the configuration.
 
     a.database = { :host => ..., :user => ..., :password => ..., :database => ... }
 
@@ -68,9 +68,9 @@ This is useful if it is being run from cron, for example.
 
 Set the verbose flag to get some output describing what it's doing.
 
-    a.run
+    end
 
-Start the processing.
+End of the configuration, start processing.
 
 For more documentation, see the generated RDoc at http://rdoc.info/projects/calmh/Aggregator
 
