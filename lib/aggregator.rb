@@ -118,21 +118,32 @@ class Aggregator
 			prev_rule_end_time = nil
 			table_rules.each do |rule|
 				# Do drops and reduces, and collect SQL statements
+
 				end_time = rule[:age].ago
+
 				if rule.key? :drop
+					# Drop data older than end_time
+
 					if @dry_run
+						# Just print the query
 						query = drop(table, end_time)
 						puts query if @verbose
 					else
+						# Execute the drop, keep statistics
 						drop(table, end_time) do |q|
 							connection.query(q)
 							deletes += connection.affected_rows
 							delete_qs += 1
 						end
 					end
+
 				elsif rule.key? :reduce
+					# Reduce data older than start_time to a lower precision (aggregate).
+
 					interval = rule[:reduce]
 					start_time = prev_rule_end_time || 0
+
+					# Aggregate separately for each ID in the table
 					ids(table).each do |id|
 						if @dry_run
 							# Aggregate and get queries for printing
@@ -195,10 +206,9 @@ class Aggregator
 	# Check if the named table should be excluded.
 	def exclude?(table)
 		@excludes.each do |excl|
-			if excl.kind_of? String
-				return true if table == excl
-			elsif excl.kind_of? Regexp
-				return true if table =~ excl
+			if excl.kind_of?(String) && table == excl \
+			|| excl.kind_of?(Regexp) && table =~ excl
+				return true
 			end
 		end
 		return false
@@ -206,17 +216,16 @@ class Aggregator
 
 	# Return a list of rules that applies to the specified table.
 	def rules_for(table)
-		for_everyone = @rules.select { |rule| rule[:table] == :all }
-		for_me_regexp = @rules.select { |rule| rule[:table] != :all && rule[:table].kind_of?(Regexp) && table =~ rule[:table] }
-		for_me_string = @rules.select { |rule| rule[:table] != :all && rule[:table].kind_of?(String) && table == rule[:table] }
-		for_me_string.each do |r|
-			for_me_regexp = for_me_regexp.select { |nr| nr[:age] != r[:age] }
-			for_everyone = for_everyone.select { |nr| nr[:age] != r[:age] }
-		end
-		for_me_regexp.each do |r|
-			for_everyone = for_everyone.select { |nr| nr[:age] != r[:age] }
-		end
-		valid_rules = for_everyone + for_me_regexp + for_me_string
+		# First take those were we are explicitly mentioned by string name.
+		by_string = @rules.select { |rule| rule[:table].kind_of?(String) && table == rule[:table] }
+		ages = by_string.map { |rule| rule[:age] }
+		# Then get those were we match a regexp, avoiding those we already have.
+		by_regexp = @rules.select { |rule| rule[:table].kind_of?(Regexp) && table =~ rule[:table] && !ages.include?(rule[:age]) }
+		ages += by_regexp.map { |rule| rule[:age] }
+		# Finally get the rules meant for everyone, where we don't have a more specific.
+		for_all = @rules.select { |rule| rule[:table] == :all && !ages.include?(rule[:age]) }
+		# Concatenate and sort reversed chronologically.
+		valid_rules = by_string + by_regexp + for_all
 		valid_rules.sort { |a, b| b[:age] <=> a[:age] }
 	end
 
@@ -356,12 +365,16 @@ class Aggregator
 			begin
 				connection.query("CREATE INDEX id_idx ON #{table} (id)")
 				puts "  Created index id_idx." if @verbose
-			rescue; end
+			rescue
+				# If we couldn't create the index (because it exists), that's OK.
+			end
 
 			begin
 				connection.query("CREATE INDEX #{table}_idx ON #{table} (dtime)")
 				puts "  Created index #{table}_idx." if @verbose
-			rescue; end
+			rescue
+				# If we couldn't create the index (because it exists), that's OK.
+			end
 		end
 	end
 
