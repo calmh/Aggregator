@@ -70,9 +70,9 @@ class Aggregator
 	attr_accessor :verbose
 
 	def self.aggregate
-		a = Aggregator.new
-		yield(a)
-		a.run
+		aggregator = Aggregator.new
+		yield(aggregator)
+		aggregator.run
 	end
 
 	def initialize
@@ -231,26 +231,32 @@ class Aggregator
 
 	# Create a row that summarizes all those passed in.
 	def summary_row(rows)
-		return nil if rows.nil? || rows.length == 0
-		return rows[0] if rows.length == 1
-		last_row = rows[rows.length-1]
+		rlen = rows.length
+		return nil if rows.nil? || rlen == 0
+		return rows[0] if rlen == 1
+		last_row = rows[rlen - 1]
+		average = rows.inject(0) { |sum, row| sum += row[2] } / rlen
 		if gauge? rows
-			average = rows.inject(0) { |m, n| m += n[2] } / rows.length
 			return [ last_row[0], average, average ]
 		else
-			average_rate = rows.inject(0) { |m, n| m += n[2] } / rows.length
-			counter_sum = rows.inject(0) { |m, n| m += n[1] }
-			return [ last_row[0], counter_sum, average_rate ]
+			counter_sum = rows.inject(0) { |sum, row| sum += row[1] }
+			return [ last_row[0], counter_sum, average ]
 		end
 	end
 
 	# Guess whether a certain dataset seems to be gauge data or not.
 	def gauge?(rows)
+		rlen = rows.length
 		required_gauge_confidence = 2
 		probably_gauge = 0
-		rows = rows.dup
-		while rows.length > 0 && probably_gauge >= 0 && probably_gauge < required_gauge_confidence
-			row = rows.delete_at(rand(rows.length))
+		tested = []
+		# Pick a start row, any row.
+		index = rlen - 1
+		# Do a few random tests until we are fairly sure whether this is a gauge or normal counter.
+		while tested.length < rlen && probably_gauge >= 0 && probably_gauge < required_gauge_confidence
+			index = rand(rlen) while tested.include? index
+			row = rows[index]
+			tested << index
 			probably_gauge += 1 if row[1] == row[2]
 		end
 		return probably_gauge >= required_gauge_confidence
@@ -283,9 +289,10 @@ class Aggregator
 	# Mark the specified table as pruned
 	def set_pruned(table)
 		if !@dry_run
-			res = connection.query("UPDATE pruned SET prune_time = now() WHERE table_name = '#{table}'")
-			if connection.affected_rows == 0
-				connection.query("INSERT INTO pruned (table_name, prune_time) VALUES ('#{table}', now())")
+			conn = connection
+			res = conn.query("UPDATE pruned SET prune_time = now() WHERE table_name = '#{table}'")
+			if conn.affected_rows == 0
+				conn.query("INSERT INTO pruned (table_name, prune_time) VALUES ('#{table}', now())")
 			end
 			puts "  Updated prune_time." if @verbose
 		end
@@ -306,7 +313,7 @@ class Aggregator
 			if cluster.length > 1
 				summary = summary_row(cluster)
 				insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
-				delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |c| "FROM_UNIXTIME(#{c[0]})" }.join(", ") + ")"
+				delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |row| "FROM_UNIXTIME(#{row[0]})" }.join(", ") + ")"
 				if defined? yield
 					yield delete
 					yield insert
@@ -320,11 +327,11 @@ class Aggregator
 
 	# Create SQL command to delete old data from a table.
 	def drop(table, end_time)
-		q = "DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
+		query = "DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
 		if defined? yield
-			yield(q)
+			yield(query)
 		else
-			return q
+			return query
 		end
 	end
 
@@ -340,7 +347,7 @@ class Aggregator
 
 	# Return a list of all non-excluded tables
 	def tables
-		connection.list_tables.select { |t| !exclude?(t) }
+		connection.list_tables.select { |table| !exclude?(table) }
 	end
 
 	# Return a list of all ids in a table.
@@ -355,7 +362,7 @@ class Aggregator
 	def rows(table, id, start_time, end_time)
 		res = connection.query("SELECT UNIX_TIMESTAMP(dtime), counter, rate FROM #{table} WHERE id = #{id} AND dtime >= FROM_UNIXTIME(#{start_time}) AND dtime <= FROM_UNIXTIME(#{end_time})")
 		rows = []
-		res.each { |i| rows << [ i[0].to_i, i[1].to_i, i[2].to_i ] }
+		res.each { |row| rows << [ row[0].to_i, row[1].to_i, row[2].to_i ] }
 		return rows
 	end
 
