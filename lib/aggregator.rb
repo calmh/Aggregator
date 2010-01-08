@@ -105,11 +105,9 @@ class Aggregator
 			table_rules = rules_for(table)
 			next if table_rules.length == 0
 
-			puts "Looking at #{table}" if @verbose
+			verbose "Looking at #{table}"
 
-			if @index
-				create_indexes(table)
-			end
+			create_indexes(table)
 
 			deletes = 0
 			inserts = 0
@@ -127,7 +125,7 @@ class Aggregator
 					if @dry_run
 						# Just print the query
 						query = drop(table, end_time)
-						puts query if @verbose
+						verbose query
 					else
 						# Execute the drop, keep statistics
 						drop(table, end_time) do |q|
@@ -148,7 +146,7 @@ class Aggregator
 						if @dry_run
 							# Aggregate and get queries for printing
 							queries = aggregate(table, id, start_time, end_time, interval)
-							queries.each { |q| puts q } if @verbose
+							verbose queries
 						else
 							# Aggregate with immediate execution
 							aggregate(table, id, start_time, end_time, interval) do |q|
@@ -168,16 +166,14 @@ class Aggregator
 
 			end
 
-			puts "  Inserted #{inserts} rows (individually)." if @verbose
-			puts "  Deleted #{deletes} rows in #{delete_qs} queries (about #{(deletes / delete_qs).to_i} rows/q)" if @verbose
+			verbose "  Inserted #{inserts} rows (individually)."
+			verbose "  Deleted #{deletes} rows in #{delete_qs} queries (about #{(deletes / delete_qs).to_i} rows/q)"
 
-			if @optimize
-				optimize_table(table)
-			end
+			optimize_table(table)
 
 			set_pruned(table)
 
-			puts "  #{to_process.length} tables left to check." if @verbose
+			verbose "  #{to_process.length} tables left to check."
 		end
 	end
 
@@ -294,7 +290,7 @@ class Aggregator
 			if conn.affected_rows == 0
 				conn.query("INSERT INTO pruned (table_name, prune_time) VALUES ('#{table}', now())")
 			end
-			puts "  Updated prune_time." if @verbose
+			verbose "  Updated prune_time."
 		end
 	end
 
@@ -368,28 +364,37 @@ class Aggregator
 
 	# Create necessary indexes, ignoring exceptions if they already exist.
 	def create_indexes(table)
+		return if !@index
 		if !@dry_run
 			begin
 				connection.query("CREATE INDEX id_idx ON #{table} (id)")
-				puts "  Created index id_idx." if @verbose
+				verbose "  Created index id_idx."
 			rescue
-				# If we couldn't create the index (because it exists), that's OK.
+				nil # If we couldn't create the index (because it exists), that's OK.
 			end
 
 			begin
 				connection.query("CREATE INDEX #{table}_idx ON #{table} (dtime)")
-				puts "  Created index #{table}_idx." if @verbose
+				verbose "  Created index #{table}_idx."
 			rescue
-				# If we couldn't create the index (because it exists), that's OK.
+				nil # If we couldn't create the index (because it exists), that's OK.
 			end
 		end
 	end
 
 	# Optimize table
 	def optimize_table(table)
+		return if !@optimize
 		if !@dry_run
 			connection.query("OPTIMIZE TABLE #{table}")
-			puts "  Optimized table." if @verbose
+			verbose "  Optimized table."
+		end
+	end
+
+	# Conditionally print verbose data
+	def verbose(*args)
+		if @verbose
+			$stderr.puts args
 		end
 	end
 end
