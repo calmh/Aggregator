@@ -72,7 +72,7 @@ Set the verbose flag to get some output describing what it's doing.
 
 End of the configuration, start processing.
 
-For more documentation, see the generated RDoc at http://rdoc.info/projects/calmh/Aggregator
+For more documentation, see the generated RDoc at http://rdoc.info/projects/calmh/RTG-Aggregator
 
 Jakob Borg
 2009-12-29
