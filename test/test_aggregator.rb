@@ -367,19 +367,6 @@ class TestAggregator < Test::Unit::TestCase
 		end
 	end
 
-	def test_aggregator_should_aggregate_table_by_hour_and_execute_block
-		if HAVE_LOCAL_DB
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			blockqueries = []
-			queries = ag.aggregate('ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour) { |q| blockqueries << q }
-			assert_equal(0, queries.length)
-			assert(blockqueries.length > 2)
-			assert(blockqueries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
-			assert(blockqueries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
-		end
-	end
-
 	def test_aggregator_should_run
 		if HAVE_LOCAL_DB
 			assert_nothing_raised do

@@ -18,6 +18,13 @@ class Numeric
 	def years ; year ; end
 end
 
+class String
+	# Match string or regexp
+	def apprmatch(obj)
+		obj.kind_of?(String) && self == obj || obj.kind_of?(Regexp) && self =~ obj
+	end
+end
+
 class Aggregator
 	# Rules for handling tables. Add hashes of that include the keys:
 	#  :age    # Rule triggers for rows that are at least this old
@@ -99,81 +106,41 @@ class Aggregator
 		processing_limit_time = Time.new + runlimit
 		while to_process.length > 0 && (runlimit.nil? || Time.new < processing_limit_time)
 			table = to_process.delete_at(rand(to_process.length))
-			last_pruned = get_pruned(table)
-			next if !last_pruned.nil? && DateTime.now < last_pruned + reaggregate_interval / 86400.0
+			if needs_pruning?(table)
+				@deletes = 0
+				@inserts = 0
+				@delete_qs = 0
+				@insert_qs = 0
+				verbose "Looking at #{table}"
 
-			table_rules = rules_for(table)
-			next if table_rules.length == 0
+				table_rules = rules_for(table)
+				create_indexes(table)
 
-			verbose "Looking at #{table}"
-
-			create_indexes(table)
-
-			deletes = 0
-			inserts = 0
-			delete_qs = 0
-			insert_qs = 0
-			prev_rule_end_time = nil
-			table_rules.each do |rule|
-				# Do drops and reduces, and collect SQL statements
-
-				end_time = rule[:age].ago
-
-				if rule.key? :drop
-					# Drop data older than end_time
-
-					if @dry_run
-						# Just print the query
-						query = drop(table, end_time)
-						verbose query
-					else
-						# Execute the drop, keep statistics
-						drop(table, end_time) do |q|
-							connection.query(q)
-							deletes += connection.affected_rows
-							delete_qs += 1
-						end
-					end
-
-				elsif rule.key? :reduce
-					# Reduce data older than start_time to a lower precision (aggregate).
-
+				prev_rule_end_time = nil
+				table_rules.each do |rule|
+					end_time = rule[:age].ago
 					interval = rule[:reduce]
 					start_time = prev_rule_end_time || 0
 
-					# Aggregate separately for each ID in the table
-					ids(table).each do |id|
-						if @dry_run
-							# Aggregate and get queries for printing
-							queries = aggregate(table, id, start_time, end_time, interval)
-							verbose queries
-						else
-							# Aggregate with immediate execution
-							aggregate(table, id, start_time, end_time, interval) do |q|
-								connection.query(q)
-								if q =~ /INSERT/
-									inserts += connection.affected_rows
-									insert_qs += 1
-								elsif q =~ /DELETE/
-									deletes += connection.affected_rows
-									delete_qs += 1
-								end
-							end
+					if rule.key? :drop
+						# Drop data older than end_time
+						drop_older_db(table, end_time)
+					elsif rule.key? :reduce
+						# Reduce data older than start_time to a lower precision (aggregate).
+						# Aggregate separately for each ID in the table
+						ids(table).each do |id|
+							aggregate_db(table, id, start_time, end_time, interval)
 						end
 					end
+					prev_rule_end_time = end_time
 				end
-				prev_rule_end_time = end_time
 
+				verbose "  Inserted #{@inserts} rows (individually)."
+				verbose "  Deleted #{@deletes} rows in #{@delete_qs} queries (about #{(@deletes / @delete_qs).to_i} rows/q)"
+
+				optimize_table(table)
+				set_pruned(table)
 			end
-
-			verbose "  Inserted #{inserts} rows (individually)."
-			verbose "  Deleted #{deletes} rows in #{delete_qs} queries (about #{(deletes / delete_qs).to_i} rows/q)"
-
-			optimize_table(table)
-
-			set_pruned(table)
-
-			verbose "  #{to_process.length} tables left to check."
 		end
 	end
 
@@ -202,10 +169,7 @@ class Aggregator
 	# Check if the named table should be excluded.
 	def exclude?(table)
 		@excludes.each do |excl|
-			if excl.kind_of?(String) && table == excl \
-			|| excl.kind_of?(Regexp) && table =~ excl
-				return true
-			end
+			return true if table.apprmatch(excl)
 		end
 		return false
 	end
@@ -264,20 +228,27 @@ class Aggregator
 
 	# Verify that we have a pruned table, or create it if not.
 	def create_pruned_table(conn)
-		if !@dry_run && !conn.list_tables.include?('pruned')
-			res = conn.query("CREATE TABLE `pruned` (
-			`table_name` VARCHAR(64) NOT NULL PRIMARY KEY,
-			`prune_time` DATETIME NOT NULL
-			)")
+		if !conn.list_tables.include?('pruned')
+			query = "CREATE TABLE `pruned` ( `table_name` VARCHAR(64) NOT NULL PRIMARY KEY, `prune_time` DATETIME NOT NULL )"
+		end
+		if @dry_run
+			verbose query
+		else
+			conn.query query
 		end
 	end
 
 	# Get the latest prune time for specified table, or nil if never
 	def get_pruned(table)
-		res = connection.query("SELECT prune_time FROM pruned WHERE table_name = '#{table}'")
-		if res.num_rows == 1
-			row = res.fetch_row
-			return DateTime.parse(row[0])
+		query = "SELECT prune_time FROM pruned WHERE table_name = '#{table}'"
+		if @dry_run
+			verbose query
+		else
+			res = connection.query query
+			if res.num_rows == 1
+				row = res.fetch_row
+				return DateTime.parse(row[0])
+			end
 		end
 		return nil
 	end
@@ -310,29 +281,54 @@ class Aggregator
 				summary = summary_row(cluster)
 				insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
 				delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |row| "FROM_UNIXTIME(#{row[0]})" }.join(", ") + ")"
-				if defined? yield
-					yield delete
-					yield insert
-				else
-					queries << delete << insert
-				end
+				queries << delete << insert
 			end
 		end
 		return queries
 	end
 
-	# Create SQL command to delete old data from a table.
-	def drop(table, end_time)
-		query = "DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
-		if defined? yield
-			yield(query)
+	def aggregate_db(table, id, start_time, end_time, interval)
+		queries = aggregate(table, id, start_time, end_time, interval)
+		if !@dry_run
+			conn = connection
+			queries.each do |q|
+				conn.query(q)
+				if q =~ /INSERT/
+					@inserts += conn.affected_rows
+					@insert_qs += 1
+				elsif q =~ /DELETE/
+					@deletes += conn.affected_rows
+					@delete_qs += 1
+				end
+			end
 		else
-			return query
+			verbose queries
 		end
 	end
 
+
+	# Create SQL command to delete old data from a table.
+	def drop_older(table, end_time)
+		query = "DELETE FROM #{table} WHERE dtime <= FROM_UNIXTIME(#{end_time})"
+		return query
+	end
+
+	def drop_older_db(table, end_time)
+		query = drop_older(table, end_time)
+		if !@dry_run
+			conn = connection
+			conn.query query
+			@deletes += conn.affected_rows
+			@delete_qs += 1
+		else
+			verbose query
+		end
+	end
+
+
 	# Get a database connection or raise an error if we can't
 	def connection
+		return nil if @dry_run
 		raise Mysql::Error, "Cannot connect without database information" if @database.nil?
 		if !@conn
 			@conn = Mysql::new(@database[:host], @database[:user], @database[:password], @database[:database])
@@ -396,6 +392,14 @@ class Aggregator
 		if @verbose
 			$stderr.puts args
 		end
+	end
+
+	def needs_pruning?(table)
+		last_pruned = get_pruned(table)
+		return false if !last_pruned.nil? && DateTime.now < last_pruned + reaggregate_interval / 86400.0
+
+		table_rules = rules_for(table)
+		return false if table_rules.length == 0
 	end
 end
 
