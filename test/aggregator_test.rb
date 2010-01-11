@@ -317,4 +317,21 @@ class TestAggregator < Test::Unit::TestCase
 			end
 		end
 	end
+
+	def test_aggregator_should_create_pruned_table
+		return unless ENV['HAVE_LOCAL_DB']
+		a = Aggregator.new
+		a.create_pruned_table(conn)
+		assert(conn.list_tables.include? 'pruned')
+	end
+
+	def test_aggregator_should_create_pruned_table_or_exit_cleanly
+		return unless ENV['HAVE_LOCAL_DB']
+		a = Aggregator.new
+		a.create_pruned_table(conn)
+		assert(conn.list_tables.include? 'pruned')
+		assert_nothing_raised do
+			a.create_pruned_table(conn)
+		end
+	end
 end

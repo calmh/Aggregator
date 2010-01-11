@@ -207,11 +207,11 @@ class Aggregator
 	def create_pruned_table(conn)
 		if !conn.list_tables.include?('pruned')
 			query = "CREATE TABLE `pruned` ( `table_name` VARCHAR(64) NOT NULL PRIMARY KEY, `prune_time` DATETIME NOT NULL )"
-		end
-		if @dry_run
-			verbose query
-		else
-			conn.query query
+			if @dry_run
+				verbose query
+			else
+				conn.query query
+			end
 		end
 	end
 
