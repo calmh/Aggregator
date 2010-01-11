@@ -1,22 +1,10 @@
 require 'test/unit'
 require 'aggregator'
 
-class Class
-	# Make all private methods public and return a list of them
-	def publicize_methods
-		saved_private_instance_methods = self.private_instance_methods
-		self.class_eval { public *saved_private_instance_methods }
-		return saved_private_instance_methods
-	end
-
-	# Make the specified methods private
-	def privatize_methods(methods)
-		self.class_eval { private *methods }
-	end
-end
+$:.unshift File.dirname(__FILE__)
+require 'test_helper'
 
 class TestAggregator < Test::Unit::TestCase
-	HAVE_LOCAL_DB = true
 	TESTDBHOST = 'localhost'
 	TESTDBUSER = 'root'
 	TESTDBPASS = nil
@@ -60,7 +48,7 @@ class TestAggregator < Test::Unit::TestCase
 		# The class under inspection shall have no secrets
 		@privates = Aggregator.publicize_methods
 
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			conn.query("CREATE DATABASE #{TESTDBDATABASE}")
 			conn.query("USE #{TESTDBDATABASE}")
 			conn.query("CREATE TABLE `interfaces` ( `id` int )")
@@ -81,7 +69,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def teardown
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			conn.query("DROP DATABASE #{TESTDBDATABASE}")
 		end
 
@@ -230,7 +218,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_must_connect_to_local_db
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			ag = Aggregator.new
 			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 			assert_not_equal(nil, ag.connection)
@@ -238,7 +226,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_must_return_one_table_in_list
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			ag = Aggregator.new
 			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 			tables = ag.tables
@@ -248,7 +236,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_set_and_get_pruned
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			ag = Aggregator.new
 			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 			ag.set_pruned 'foo'
@@ -257,7 +245,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_get_table_ids
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			ag = Aggregator.new
 			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 			ids = ag.ids 'ifInOctets_252'
@@ -267,7 +255,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_get_table_rows
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			ag = Aggregator.new
 			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 			rows = ag.rows 'ifInOctets_252', 42, 2.month.ago, 1.month.ago
@@ -341,7 +329,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_aggregate_table_by_hour
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			ag = Aggregator.new
 			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 			queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
@@ -352,7 +340,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_aggregate_table_by_hour_and_not_repeat_itself
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			ag = Aggregator.new
 			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 			queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
@@ -368,7 +356,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_run
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			assert_nothing_raised do
 				ag = Aggregator.new
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
@@ -383,7 +371,7 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_run_new_syntax
-		if HAVE_LOCAL_DB
+		if ENV['HAVE_LOCAL_DB']
 			assert_nothing_raised do
 				Aggregator.aggregate do |ag|
 					ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
