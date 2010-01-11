@@ -5,73 +5,15 @@ $:.unshift File.dirname(__FILE__)
 require 'test_helper'
 
 class TestAggregator < Test::Unit::TestCase
-	TESTDBHOST = 'localhost'
-	TESTDBUSER = 'root'
-	TESTDBPASS = nil
-	TESTDBDATABASE = 'rtg'
-
-	def conn
-		@conn ||= Mysql::new(TESTDBHOST, TESTDBUSER, TESTDBPASS, nil)
-	end
-
-	# Generate a few counter rows
-	def counter_rows(num, base, rate, interval)
-		rows = []
-		counter_sum = 0
-		rate_sum = 0
-		num.times do |i|
-			rate_sum += rate
-			counter_sum += rate*interval
-			rows << [ base, rate*interval, rate ]
-			rate = rate * 1.1
-			base += interval
-		end
-		rate_avg = rate_sum / num
-		return [rows, counter_sum, rate_avg]
-	end
-
-	# Generate a few gauge rows
-	def gauge_rows(num, base, rate, interval)
-		rows = []
-		rate_sum = 0
-		num.times do |i|
-			rate_sum += rate
-			rows << [ base, rate, rate ]
-			rate = rate * 1.1
-			base += interval
-		end
-		rate_avg = rate_sum / num
-		return [rows, rate_avg]
-	end
-
 	def setup
 		# The class under inspection shall have no secrets
 		@privates = Aggregator.publicize_methods
 
-		if ENV['HAVE_LOCAL_DB']
-			conn.query("CREATE DATABASE #{TESTDBDATABASE}")
-			conn.query("USE #{TESTDBDATABASE}")
-			conn.query("CREATE TABLE `interfaces` ( `id` int )")
-			conn.query("CREATE TABLE `routers` ( `id` int )")
-			conn.query("CREATE TABLE `ifInOctets_252` (
-			`id` int(11) NOT NULL,
-			`dtime` datetime NOT NULL,
-			`counter` bigint(20) NOT NULL,
-			`rate` bigint(20) default NULL
-			)")
-			insert = "INSERT INTO `ifInOctets_252` ( `id`, `dtime`, `counter`, `rate` ) VALUES "
-			base = (1.month + 4.hour).ago
-			bps = 1e6
-			inc = 0.1e6
-			insert += 1.upto(100).map { |i| "( 42, FROM_UNIXTIME(#{base + i * 300}), #{(bps + inc * i) * 8 * 300}, #{(bps + inc * i) * 8} )"  }.join(", ")
-			conn.query(insert)
-		end
+		db_setup if ENV['HAVE_LOCAL_DB']
 	end
 
 	def teardown
-		if ENV['HAVE_LOCAL_DB']
-			conn.query("DROP DATABASE #{TESTDBDATABASE}")
-		end
+		db_teardown if ENV['HAVE_LOCAL_DB']
 
 		Aggregator.privatize_methods @privates
 	end
@@ -218,49 +160,44 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_must_connect_to_local_db
-		if ENV['HAVE_LOCAL_DB']
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			assert_not_equal(nil, ag.connection)
-		end
+		return unless ENV['HAVE_LOCAL_DB']
+		ag = Aggregator.new
+		ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+		assert_not_equal(nil, ag.connection)
 	end
 
 	def test_aggregator_must_return_one_table_in_list
-		if ENV['HAVE_LOCAL_DB']
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			tables = ag.tables
-			assert_equal(1, tables.length)
-			assert_equal("ifInOctets_252", tables[0])
-		end
+		return unless ENV['HAVE_LOCAL_DB']
+		ag = Aggregator.new
+		ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+		tables = ag.tables
+		assert_equal(1, tables.length)
+		assert_equal("ifInOctets_252", tables[0])
 	end
 
 	def test_aggregator_should_set_and_get_pruned
-		if ENV['HAVE_LOCAL_DB']
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			ag.set_pruned 'foo'
-			assert_kind_of(DateTime, ag.get_pruned('foo'))
-		end
+		return unless ENV['HAVE_LOCAL_DB']
+		ag = Aggregator.new
+		ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+		ag.set_pruned 'foo'
+		assert_kind_of(DateTime, ag.get_pruned('foo'))
 	end
 
 	def test_aggregator_should_get_table_ids
-		if ENV['HAVE_LOCAL_DB']
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			ids = ag.ids 'ifInOctets_252'
-			assert_equal(1, ids.length)
-			assert_equal(42, ids[0])
-		end
+		return unless ENV['HAVE_LOCAL_DB']
+		ag = Aggregator.new
+		ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+		ids = ag.ids 'ifInOctets_252'
+		assert_equal(1, ids.length)
+		assert_equal(42, ids[0])
 	end
 
 	def test_aggregator_should_get_table_rows
-		if ENV['HAVE_LOCAL_DB']
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			rows = ag.rows 'ifInOctets_252', 42, 2.month.ago, 1.month.ago
-			assert_in_delta(50, rows.length, 5)
-		end
+		return unless ENV['HAVE_LOCAL_DB']
+		ag = Aggregator.new
+		ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+		rows = ag.rows 'ifInOctets_252', 42, 2.month.ago, 1.month.ago
+		assert_in_delta(50, rows.length, 5)
 	end
 
 	def test_aggregator_must_recognize_counters_example_one
@@ -329,58 +266,54 @@ class TestAggregator < Test::Unit::TestCase
 	end
 
 	def test_aggregator_should_aggregate_table_by_hour
-		if ENV['HAVE_LOCAL_DB']
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
-			assert(queries.length > 2)
-			assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
-			assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
-		end
+		return unless ENV['HAVE_LOCAL_DB']
+		ag = Aggregator.new
+		ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+		queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
+		assert(queries.length > 2)
+		assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
+		assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
 	end
 
 	def test_aggregator_should_aggregate_table_by_hour_and_not_repeat_itself
-		if ENV['HAVE_LOCAL_DB']
-			ag = Aggregator.new
-			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-			queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
-			assert(queries.length > 2)
-			assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
-			assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
-			# Execute the suggested queries
-			queries.each { |q| conn.query(q) }
-			# Verify that a new aggregations finds nothing to do.
-			queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
-			assert_equal(0, queries.length)
-		end
+		return unless ENV['HAVE_LOCAL_DB']
+		ag = Aggregator.new
+		ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+		queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
+		assert(queries.length > 2)
+		assert(queries[0] =~ /DELETE FROM ifInOctets_252 WHERE id = 42 AND/)
+		assert(queries[1] =~ /INSERT INTO ifInOctets_252 \(id, dtime, counter, rate\) VALUES \(/)
+		# Execute the suggested queries
+		queries.each { |q| conn.query(q) }
+		# Verify that a new aggregations finds nothing to do.
+		queries = ag.aggregate 'ifInOctets_252', 42, 2.month.ago, 1.month.ago, 1.hour
+		assert_equal(0, queries.length)
 	end
 
 	def test_aggregator_should_run
-		if ENV['HAVE_LOCAL_DB']
-			assert_nothing_raised do
-				ag = Aggregator.new
+		return unless ENV['HAVE_LOCAL_DB']
+		assert_nothing_raised do
+			ag = Aggregator.new
+			ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+			ag.rules << { :table => :all, :age => 14.day, :reduce => 1.hour }
+			ag.rules << { :table => :all, :age => 1.month, :reduce => 2.hour  }
+			ag.rules << { :table => :all, :age => 2.month, :drop => true }
+			ag.verbose = false
+			ag.runlimit = 50.minute
+			ag.run
+		end
+	end
+
+	def test_aggregator_should_run_new_syntax
+		return unless ENV['HAVE_LOCAL_DB']
+		assert_nothing_raised do
+			Aggregator.aggregate do |ag|
 				ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
 				ag.rules << { :table => :all, :age => 14.day, :reduce => 1.hour }
 				ag.rules << { :table => :all, :age => 1.month, :reduce => 2.hour  }
 				ag.rules << { :table => :all, :age => 2.month, :drop => true }
 				ag.verbose = false
 				ag.runlimit = 50.minute
-				ag.run
-			end
-		end
-	end
-
-	def test_aggregator_should_run_new_syntax
-		if ENV['HAVE_LOCAL_DB']
-			assert_nothing_raised do
-				Aggregator.aggregate do |ag|
-					ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
-					ag.rules << { :table => :all, :age => 14.day, :reduce => 1.hour }
-					ag.rules << { :table => :all, :age => 1.month, :reduce => 2.hour  }
-					ag.rules << { :table => :all, :age => 2.month, :drop => true }
-					ag.verbose = false
-					ag.runlimit = 50.minute
-				end
 			end
 		end
 	end
