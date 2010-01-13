@@ -20,6 +20,8 @@ Gem::Specification.new do |s|
     "LICENSE",
      "README.md",
      "Rakefile",
+     "VERSION",
+     "aggregator.gemspec",
      "lib/aggregator.rb",
      "lib/extensions.rb",
      "test/aggregator_test.rb",
