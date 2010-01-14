@@ -334,4 +334,31 @@ class TestAggregator < Test::Unit::TestCase
 	    a.create_pruned_table(conn)
 	end
     end
+
+    def test_get_pruned_should_return_nil
+	return unless ENV['HAVE_LOCAL_DB']
+	a = Aggregator.new
+	a.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+	gp = a.get_pruned('ifInOctets_252')
+	assert_equal(nil, gp)
+    end
+
+    def test_needs_pruning_should_return_true
+	return unless ENV['HAVE_LOCAL_DB']
+	a = Aggregator.new
+	a.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+	a.rules << { :table => :all, :age => 14.day, :reduce => 1.hour }
+	np = a.needs_pruning?('ifInOctets_252')
+	assert_equal(true, np)
+    end
+
+    def test_needs_pruning_should_return_false
+	return unless ENV['HAVE_LOCAL_DB']
+	a = Aggregator.new
+	a.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+	a.rules << { :table => :all, :age => 14.day, :reduce => 1.hour }
+	a.set_pruned('ifInOctets_252')
+	np = a.needs_pruning?('ifInOctets_252')
+	assert_equal(false, np)
+    end
 end

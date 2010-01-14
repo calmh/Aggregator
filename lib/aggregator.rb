@@ -380,6 +380,8 @@ class Aggregator
 
 	table_rules = rules_for(table)
 	return false if table_rules.length == 0
+
+	true
     end
 end
 
