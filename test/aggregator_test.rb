@@ -230,6 +230,22 @@ class TestAggregator < Test::Unit::TestCase
     assert(ag.gauge?(rows))
   end
 
+  def test_aggregator_should_consider_table_as_gauge_always_with_string
+    ag = Aggregator.new
+    ag.always_gauge << "bargle"
+    ag.always_gauge << "foo"
+    assert(!ag.configured_as_gauge?("bar"))
+    assert(ag.configured_as_gauge?("foo"))
+  end
+
+  def test_aggregator_should_consider_table_as_gauge_always_with_regexp
+    ag = Aggregator.new
+    ag.always_gauge << "bargle"
+    ag.always_gauge << /oo/
+    assert(!ag.configured_as_gauge?("bar"))
+    assert(ag.configured_as_gauge?("foo"))
+  end
+
   def test_aggregator_should_aggregate_counter_rows
     base = 1234567890
     rows, counter_sum, rate_avg = counter_rows(100, base, 1e6, 300)

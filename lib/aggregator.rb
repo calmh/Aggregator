@@ -52,6 +52,8 @@ class Aggregator
   # Whether to print short informational messages to stdout during processing.
   #  verbose = false
   attr_accessor :verbose
+  # Table names that should always be considered gauge, regardless of autodetection.
+  attr_accessor :always_gauge
 
   # Convenience method to run aggregation. Passes an aggregator instance to the block for configuration, and the runs aggregation.
   def self.aggregate
@@ -70,6 +72,7 @@ class Aggregator
     @database = nil
     @dry_run = false
     @verbose = false
+    @always_gauge = []
   end
 
   # List of all currently active rules.
@@ -128,6 +131,14 @@ class Aggregator
   # Logic stuff
   #
 
+  def configured_as_gauge?(table_name)
+    @always_gauge.each do |expression|
+      return true if expression.kind_of?(String) && table_name == expression
+      return true if expression.kind_of?(Regexp) && table_name =~ expression
+    end
+    return false
+  end
+
   def cluster_rows(rows, interval)
     clusters = []
     cur_cluster = []
@@ -168,13 +179,13 @@ class Aggregator
   end
 
   # Create a row that summarizes all those passed in.
-  def summary_row(rows)
+  def summary_row(rows, table_name=nil)
     rlen = rows.length
     return nil if rows.nil? || rlen == 0
     return rows[0] if rlen == 1
     last_row = rows[rlen - 1]
     average = rows.inject(0) { |sum, row| sum += row[2] } / rlen
-    if gauge? rows
+    if configured_as_gauge?(table_name) || gauge?(rows)
       return [ last_row[0], average, average ]
     else
       counter_sum = rows.inject(0) { |sum, row| sum += row[1] }
@@ -256,7 +267,7 @@ class Aggregator
     clusters = cluster_rows(rows, interval)
     clusters.each do |cluster|
       if cluster.length > 1
-        summary = summary_row(cluster)
+        summary = summary_row(cluster, table)
         insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
         delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |row| "FROM_UNIXTIME(#{row[0]})" }.join(", ") + ")"
         queries << delete << insert
