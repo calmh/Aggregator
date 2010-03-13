@@ -140,19 +140,23 @@ class Aggregator
   end
 
   def cluster_rows(rows, interval)
-    clusters = []
-    cur_cluster = []
-    interval_end = (rows[0][0] / interval + 1).to_i * interval
+    @clusters = []
+    @cur_cluster = []
+    @interval_end = (rows[0][0] / interval + 1).to_i * interval
     rows.each do |row|
-      if row[0] > interval_end
-        clusters << cur_cluster if cur_cluster.length > 0
-        cur_cluster = []
-        interval_end += interval
-      end
-      cur_cluster << row
+      add_row_to_clusters(row, interval)
     end
-    clusters << cur_cluster if cur_cluster.length > 0
-    return clusters
+    @clusters << @cur_cluster if @cur_cluster.length > 0
+    return @clusters
+  end
+
+  def add_row_to_clusters(row, interval)
+    if row[0] > @interval_end
+      @clusters << @cur_cluster if @cur_cluster.length > 0
+      @cur_cluster = []
+      @interval_end += interval
+    end
+    @cur_cluster << row
   end
 
   # Check if the named table should be excluded.
@@ -165,17 +169,30 @@ class Aggregator
 
   # Return a list of rules that applies to the specified table.
   def rules_for(table)
-    # First take those were we are explicitly mentioned by string name.
-    by_string = @rules.select { |rule| rule[:table].kind_of?(String) && table == rule[:table] }
-    ages = by_string.map { |rule| rule[:age] }
-    # Then get those were we match a regexp, avoiding those we already have.
-    by_regexp = @rules.select { |rule| rule[:table].kind_of?(Regexp) && table =~ rule[:table] && !ages.include?(rule[:age]) }
-    ages += by_regexp.map { |rule| rule[:age] }
-    # Finally get the rules meant for everyone, where we don't have a more specific.
-    for_all = @rules.select { |rule| rule[:table] == :all && !ages.include?(rule[:age]) }
-    # Concatenate and sort reversed chronologically.
+    by_string, ages = rules_by_string(table, [])
+    by_regexp, ages = rules_by_regexp(table, ages)
+    for_all, ages = rules_for_all(table, ages)
+
     valid_rules = by_string + by_regexp + for_all
     valid_rules.sort { |a, b| b[:age] <=> a[:age] }
+  end
+
+  def rules_by_string(table, ages)
+    rules = @rules.select { |rule| rule[:table].kind_of?(String) && table == rule[:table] }
+    ages = rules.map { |rule| rule[:age] }
+    return [ rules, ages ]
+  end
+
+  def rules_by_regexp(table, ages)
+    rules = @rules.select { |rule| rule[:table].kind_of?(Regexp) && table =~ rule[:table] && !ages.include?(rule[:age]) }
+    ages += rules.map { |rule| rule[:age] }
+    return [ rules, ages ]
+  end
+
+  def rules_for_all(table, ages)
+    rules = @rules.select { |rule| rule[:table] == :all && !ages.include?(rule[:age]) }
+    ages += rules.map { |rule| rule[:age] }
+    return [ rules, ages ]
   end
 
   # Create a row that summarizes all those passed in.
@@ -183,8 +200,15 @@ class Aggregator
     rlen = rows.length
     return nil if rows.nil? || rlen == 0
     return rows[0] if rlen == 1
+
+    return sum_prechecked_rows(rows, table_name)
+  end
+
+  def sum_prechecked_rows(rows, table_name)
+    rlen = rows.length
     last_row = rows[rlen - 1]
     average = rows.inject(0) { |sum, row| sum += row[2] } / rlen
+
     if configured_as_gauge?(table_name) || gauge?(rows)
       return [ last_row[0], average, average ]
     else
@@ -263,17 +287,20 @@ class Aggregator
   def aggregate(table, id, start_time, end_time, interval)
     rows = rows(table, id, start_time, end_time)
     return [] if rows.count < 2
-    queries = []
+    @queries = []
     clusters = cluster_rows(rows, interval)
     clusters.each do |cluster|
-      if cluster.length > 1
-        summary = summary_row(cluster, table)
-        insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
-        delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |row| "FROM_UNIXTIME(#{row[0]})" }.join(", ") + ")"
-        queries << delete << insert
-      end
+      aggregate_cluster(cluster, table, id)
     end
-    return queries
+    return @queries
+  end
+
+  def aggregate_cluster(cluster, table, id)
+    return if cluster.length <= 1
+    summary = summary_row(cluster, table)
+    insert = "INSERT INTO #{table} (id, dtime, counter, rate) VALUES (#{id}, FROM_UNIXTIME(#{summary[0]}), #{summary[1]}, #{summary[2]})"
+     delete = "DELETE FROM #{table} WHERE id = #{id} AND dtime IN (" + cluster.collect{ |row| "FROM_UNIXTIME(#{row[0]})" }.join(", ") + ")"
+     @queries << delete << insert
   end
 
   def aggregate_db(table, id, start_time, end_time, interval)

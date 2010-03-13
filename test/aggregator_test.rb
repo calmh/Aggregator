@@ -78,7 +78,7 @@ class TestAggregator < Test::Unit::TestCase
     assert_equal(nil, ag.database)
   end
 
-  def test_aggregator_must_respond_to_reaggregate_interval_and_default_to_1_month
+  def test_aggregator_must_respond_to_reaggregate_interval_and_default_to_1_year
     ag = Aggregator.new
     assert_equal(1.year, ag.reaggregate_interval)
   end
