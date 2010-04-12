@@ -387,10 +387,17 @@ class Aggregator
       end
 
       begin
-        connection.query("CREATE INDEX #{table}_idx ON #{table} (dtime)")
-        verbose "  Created index #{table}_idx."
+        connection.query("DROP INDEX #{table}_idx ON #{table}")
+        verbose "  Dropped index #{table}_idx."
       rescue
-        nil # If we couldn't create the index (because it exists), that's OK.
+        nil # If we couldn't drop the index (because it doesn't exist), that's OK.
+      end
+
+      begin
+        connection.query("CREATE INDEX id_dtime_idx ON #{table} (id, dtime)")
+        verbose "  Created index id_dtime_idx."
+      rescue
+        nil # If we couldn't drop the index (because it doesn't exist), that's OK.
       end
     end
   end
