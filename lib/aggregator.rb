@@ -380,10 +380,10 @@ class Aggregator
     return if !@index
     if !@dry_run
       begin
-        connection.query("CREATE INDEX id_idx ON #{table} (id)")
-        verbose "  Created index id_idx."
+        connection.query("DROP INDEX id_idx ON #{table}")
+        verbose "  Dropped index id_idx."
       rescue
-        nil # If we couldn't create the index (because it exists), that's OK.
+        nil # If we couldn't drop the index (because it doesn't exist), that's OK.
       end
 
       begin
