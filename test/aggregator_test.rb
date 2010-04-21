@@ -320,6 +320,19 @@ class TestAggregator < Test::Unit::TestCase
     end
   end
 
+  def test_aggregator_should_aggregate_no_rows_without_exception
+    return unless ENV['HAVE_LOCAL_DB']
+
+    assert_nothing_raised do
+      ag = Aggregator.new
+      ag.database = { :host => TESTDBHOST, :user => TESTDBUSER, :password => TESTDBPASS, :database => TESTDBDATABASE }
+      ag.rules << { :table => :all, :age => 2.year, :reduce => 1.hour }
+      ag.verbose = false
+      ag.runlimit = 50.minute
+      ag.run
+    end
+  end
+
   def test_aggregator_should_run_new_syntax
     return unless ENV['HAVE_LOCAL_DB']
     assert_nothing_raised do

@@ -116,8 +116,13 @@ class Aggregator
           prev_rule_end_time = end_time
         end
 
-        verbose "  Inserted #{@inserts} rows (individually)."
-        verbose "  Deleted #{@deletes} rows in #{@delete_qs} queries (about #{(@deletes / @delete_qs).to_i} rows/q)"
+        if @inserts > 0
+          verbose "  Inserted #{@inserts} rows (individually)."
+        end
+
+        if @deletes > 0
+          verbose "  Deleted #{@deletes} rows in #{@delete_qs} queries (about #{(@deletes / @delete_qs).to_i} rows/q)"
+        end
 
         optimize_table(table)
         set_pruned(table)
