@@ -57,9 +57,9 @@ fashion as above.
 
     a.rules << { :table => :all, :age => 3.year,  :drop => true }
 
-Create a rule that matches all tabled and deletes data older than three years.
+Create a rule that matches all tables and deletes data older than three years.
 
-a.runlimit = 50.minute
+    a.runlimit = 50.minute
 
 Set a limit that the script will run for no more than 50 minutes (roughly).
 This is useful if it is being run from cron, for example.
