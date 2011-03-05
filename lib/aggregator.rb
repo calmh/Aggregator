@@ -312,6 +312,7 @@ class Aggregator
     queries = aggregate(table, id, start_time, end_time, interval)
     if !@dry_run
       conn = connection
+      conn.query "SET AUTOCOMMIT=0"
       queries.each do |q|
         conn.query(q)
         if q =~ /INSERT/
@@ -322,6 +323,8 @@ class Aggregator
           @delete_qs += 1
         end
       end
+      conn.query "COMMIT"
+      conn.query "SET AUTOCOMMIT=1"
     else
       verbose queries
     end
