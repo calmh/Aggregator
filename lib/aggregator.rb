@@ -385,24 +385,10 @@ class Aggregator
     return if !@index
     if !@dry_run
       begin
-        connection.query("DROP INDEX id_idx ON #{table}")
-        verbose "  Dropped index id_idx."
+        connection.query("ALTER IGNORE TABLE #{table} ADD PRIMARY KEY (dtime, id)")
+        verbose "  Created primary key index."
       rescue
-        nil # If we couldn't drop the index (because it doesn't exist), that's OK.
-      end
-
-      begin
-        connection.query("DROP INDEX #{table}_idx ON #{table}")
-        verbose "  Dropped index #{table}_idx."
-      rescue
-        nil # If we couldn't drop the index (because it doesn't exist), that's OK.
-      end
-
-      begin
-        connection.query("CREATE INDEX id_dtime_idx ON #{table} (id, dtime)")
-        verbose "  Created index id_dtime_idx."
-      rescue
-        nil # If we couldn't drop the index (because it doesn't exist), that's OK.
+        nil # If we couldn't create the index (because it exists), that's OK.
       end
     end
   end
