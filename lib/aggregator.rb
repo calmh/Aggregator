@@ -68,7 +68,7 @@ class Aggregator
     @optimize = true
     @excludes = [ 'interfaces', 'routers', 'pruned' ]
     @runlimit = nil
-    @reaggregate_interval = 1.year
+    @reaggregate_interval = 1.month
     @database = nil
     @dry_run = false
     @verbose = false
